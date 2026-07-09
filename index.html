@@ -219,7 +219,7 @@
   let autoEnabled = false;
   let lastDetectT = 0;
   const smallDetect = document.createElement('canvas');
-  smallDetect.width = 64; smallDetect.height = 48;
+  smallDetect.width = 96; smallDetect.height = 72;
   const smallCtx = smallDetect.getContext('2d', {willReadFrequently:true});
 
   autoBtn.addEventListener('click', () => {
@@ -236,10 +236,8 @@
     smallCtx.drawImage(canvas, 0, 0, W, H);
     const data = smallCtx.getImageData(0,0,W,H).data;
 
-    // Only scan a central crop — backgrounds/clutter tend to sit near the edges,
-    // while a person doing an rPPG measurement is expected roughly centered.
-    const xStart = Math.floor(W*0.10), xEnd = Math.ceil(W*0.90);
-    const yStart = Math.floor(H*0.04), yEnd = Math.ceil(H*0.92);
+    const xStart = Math.floor(W*0.06), xEnd = Math.ceil(W*0.94);
+    const yStart = Math.floor(H*0.03), yEnd = Math.ceil(H*0.95);
 
     let minX=W, maxX=0, minY=H, maxY=0, count=0;
     for (let y=yStart; y<yEnd; y++){
@@ -250,7 +248,7 @@
         const yy = 0.299*r + 0.587*g + 0.114*b;
         const cb = 128 - 0.168736*r - 0.331264*g + 0.5*b;
         const cr = 128 + 0.5*r - 0.418688*g - 0.081312*b;
-        const isSkin = yy>35 && cb>=77 && cb<=127 && cr>=133 && cr<=173;
+        const isSkin = yy>25 && cb>=70 && cb<=140 && cr>=125 && cr<=185;
         if (isSkin){
           count++;
           if (x<minX) minX=x; if (x>maxX) maxX=x;
@@ -259,7 +257,9 @@
       }
     }
     const scanned = (xEnd-xStart)*(yEnd-yStart);
-    if (count < scanned*0.05) return null; // not enough skin pixels — unreliable
+    const pct = count/scanned*100;
+    detectFaceBox.lastPct = pct;
+    if (count < scanned*0.025) return null; // not enough skin pixels — unreliable
     return { minX:minX/W, maxX:maxX/W, minY:minY/H, maxY:maxY/H };
   }
 
@@ -440,11 +440,12 @@
     if (autoEnabled && ts - lastDetectT > 150){
       lastDetectT = ts;
       const box = detectFaceBox(hidden);
+      const pctTxt = detectFaceBox.lastPct !== undefined ? detectFaceBox.lastPct.toFixed(1) + '%' : '?';
       if (box){
         updateAutoROI(box);
-        statusNote.textContent = 'Status: kulit terdeteksi ✓ — ROI mengikuti otomatis.';
+        statusNote.textContent = 'Status: kulit terdeteksi ✓ (' + pctTxt + ' area) — ROI mengikuti otomatis.';
       } else {
-        statusNote.textContent = 'Status: area kulit kurang jelas — dekatkan wajah / perbaiki cahaya.';
+        statusNote.textContent = 'Status: kulit kurang jelas (' + pctTxt + ' area, butuh 2.5%+) — dekatkan wajah / perbaiki cahaya.';
       }
     }
 
