@@ -93,6 +93,8 @@
   #startBtn.stop { background: var(--red); }
   #recBtn { background: var(--card); color: var(--text); border: 1px solid var(--line); flex: 0 0 auto; width: 56px; }
   #recBtn.on { background: var(--red); color: white; border-color: var(--red); }
+  #autoBtn { background: var(--card); color: var(--text); border: 1px solid var(--line); flex: 1; padding: 12px; font-size: 13px; }
+  #autoBtn.on { background: var(--teal); color: white; border-color: var(--teal); }
   button:disabled { opacity: 0.45; cursor: not-allowed; }
 
   /* ROI cards */
@@ -155,6 +157,9 @@
       <button id="startBtn">Mulai</button>
       <button id="recBtn" title="Rekam CSV">⏺</button>
     </div>
+    <div class="controls" style="margin-top:10px;">
+      <button id="autoBtn" disabled>🎯 Auto ROI (memuat model…)</button>
+    </div>
     <p class="caption" id="statusNote">Status: menunggu kamera.</p>
   </div>
 
@@ -193,17 +198,75 @@
 
 </div>
 
-<script>
-(function(){
+<script type="module">
+import { FaceLandmarker, FilesetResolver } from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
+
+(async function(){
   const video = document.getElementById('video');
   const overlay = document.getElementById('overlay');
   const octx = overlay.getContext('2d');
   const camOverlay = document.getElementById('camOverlay');
   const startBtn = document.getElementById('startBtn');
   const recBtn = document.getElementById('recBtn');
+  const autoBtn = document.getElementById('autoBtn');
   const statusNote = document.getElementById('statusNote');
   const winLenSlider = document.getElementById('winLen');
   const roiSizeSlider = document.getElementById('roiSize');
+
+  // ---------- MediaPipe Face Landmarker (Auto ROI) ----------
+  // Landmark indices on MediaPipe's 468/478-point face mesh.
+  // Forehead: midpoint of hairline (10) and glabella (151).
+  // Cheeks: single representative surface points (50 / 280).
+  // Adjust these if you want a different anatomical reference for the book.
+  const LANDMARK_SETS = { roi1: [10, 151], roi2: [50], roi3: [280] };
+
+  let faceLandmarker = null;
+  let modelReady = false;
+  let autoEnabled = false;
+  let lastDetectT = 0;
+
+  async function initModel(){
+    try{
+      const vision = await FilesetResolver.forVisionTasks(
+        "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm"
+      );
+      faceLandmarker = await FaceLandmarker.createFromOptions(vision, {
+        baseOptions: {
+          modelAssetPath: "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task",
+          delegate: "GPU"
+        },
+        runningMode: "VIDEO",
+        numFaces: 1
+      });
+      modelReady = true;
+      autoBtn.disabled = false;
+      autoBtn.textContent = '🎯 Auto ROI (MediaPipe)';
+    }catch(err){
+      modelReady = false;
+      autoBtn.disabled = true;
+      autoBtn.textContent = '🎯 Auto ROI (model gagal dimuat)';
+      autoBtn.title = 'Coba buka file ini langsung di browser (bukan preview chat) agar bisa akses CDN MediaPipe.';
+    }
+  }
+  initModel();
+
+  autoBtn.addEventListener('click', () => {
+    if (!modelReady) return;
+    autoEnabled = !autoEnabled;
+    autoBtn.classList.toggle('on', autoEnabled);
+    autoBtn.textContent = autoEnabled ? '🎯 Auto ROI: Aktif' : '🎯 Auto ROI (MediaPipe)';
+    if (autoEnabled) statusNote.textContent = 'Status: mendeteksi wajah otomatis...';
+  });
+
+  function updateAutoROI(landmarks){
+    Object.keys(LANDMARK_SETS).forEach(roiId => {
+      const idxs = LANDMARK_SETS[roiId];
+      let sx = 0, sy = 0;
+      idxs.forEach(i => { sx += landmarks[i].x; sy += landmarks[i].y; });
+      const r = rois.find(rr => rr.id === roiId);
+      if (r){ r.x = sx / idxs.length; r.y = sy / idxs.length; }
+    });
+  }
 
   const hidden = document.createElement('canvas');
   const hctx = hidden.getContext('2d', {willReadFrequently:true});
@@ -315,6 +378,12 @@
       if (p.x>=rr.left && p.x<=rr.left+rr.w && p.y>=rr.top && p.y<=rr.top+rr.h){
         dragging = rois[i];
         dragOffset = {x: p.x - rr.cx, y: p.y - rr.cy};
+        if (autoEnabled){
+          autoEnabled = false;
+          autoBtn.classList.remove('on');
+          autoBtn.textContent = '🎯 Auto ROI (MediaPipe)';
+          statusNote.textContent = 'Status: mode manual (geser ROI mematikan Auto ROI).';
+        }
         break;
       }
     }
@@ -353,6 +422,19 @@
     hctx.scale(-1,1);
     hctx.drawImage(video, -hidden.width, 0, hidden.width, hidden.height);
     hctx.restore();
+
+    if (autoEnabled && modelReady && ts - lastDetectT > 150){
+      lastDetectT = ts;
+      try{
+        const res = faceLandmarker.detectForVideo(hidden, ts);
+        if (res && res.faceLandmarks && res.faceLandmarks.length > 0){
+          updateAutoROI(res.faceLandmarks[0]);
+          statusNote.textContent = 'Status: wajah terdeteksi ✓ — ROI mengikuti otomatis.';
+        } else {
+          statusNote.textContent = 'Status: wajah tidak terdeteksi — hadapkan wajah ke kamera.';
+        }
+      }catch(e){ /* transient detection error, skip frame */ }
+    }
 
     const sx = hidden.width / overlay.width;
     const sy = hidden.height / overlay.height;
