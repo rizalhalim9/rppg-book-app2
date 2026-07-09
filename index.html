@@ -1,0 +1,573 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
+<title>ROI Explorer — Visualizer rPPG</title>
+<style>
+  :root{
+    --bg: #F5F8F7;
+    --card: #FFFFFF;
+    --line: #E3E9E7;
+    --teal: #0E7C7B;
+    --teal-dark: #0A5F5E;
+    --amber: #E8935C;
+    --red: #E0424F;
+    --blue: #3E6FA6;
+    --text: #1F2937;
+    --text-soft: #6B7280;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
+
+    --roi1: var(--teal);
+    --roi2: var(--amber);
+    --roi3: var(--blue);
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; padding: 0; background: var(--bg); color: var(--text);
+    font-family: var(--sans); overscroll-behavior: none;
+  }
+  .wrap { max-width: 480px; margin: 0 auto; padding: 16px 16px 32px; }
+
+  header { text-align: center; padding: 10px 0 18px; }
+  header .eyebrow {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--teal); font-weight: 700;
+  }
+  header h1 {
+    font-size: 20px; margin: 4px 0 2px; font-weight: 700; letter-spacing: -0.01em;
+  }
+  header p { font-size: 13px; color: var(--text-soft); margin: 0; }
+
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 14px; margin-bottom: 14px;
+  }
+  .card h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-soft); margin: 0 0 10px; font-weight: 700;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .badge {
+    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+    background: rgba(14,124,123,0.1); color: var(--teal-dark); padding: 3px 8px; border-radius: 6px;
+    text-transform: uppercase;
+  }
+
+  /* Camera preview */
+  .cam-box {
+    position: relative; border-radius: 12px; overflow: hidden;
+    background: #0d1414; aspect-ratio: 4/3;
+  }
+  video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
+  canvas#overlay { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+  .cam-overlay {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+    flex-direction: column; gap: 8px; color: #E8F2F1; background: rgba(10,20,20,0.45);
+    text-align: center; padding: 20px; font-size: 13px; line-height: 1.5; pointer-events: none;
+  }
+  .cam-overlay.hidden { display: none; }
+  .card p.caption { font-size: 12px; color: var(--text-soft); margin: 8px 0 0; }
+
+  /* ROI legend */
+  .legend { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+  .legend .item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
+
+  /* Sliders */
+  .slider-row { margin-top: 12px; }
+  .slider-row .valline { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-soft); margin-bottom: 4px; }
+  .slider-row .valline b { color: var(--text); font-family: var(--mono); }
+  input[type=range] { width: 100%; accent-color: var(--teal); }
+
+  /* Controls */
+  .controls { display: flex; gap: 10px; margin-top: 4px; }
+  button {
+    flex: 1; border: none; border-radius: 14px; padding: 16px;
+    font-size: 15px; font-weight: 700; font-family: var(--sans);
+    cursor: pointer; transition: transform 80ms ease, opacity 120ms ease;
+  }
+  button:active { transform: scale(0.97); }
+  #startBtn { background: var(--teal); color: white; }
+  #startBtn.stop { background: var(--red); }
+  #recBtn { background: var(--card); color: var(--text); border: 1px solid var(--line); flex: 0 0 auto; width: 56px; }
+  #recBtn.on { background: var(--red); color: white; border-color: var(--red); }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ROI cards */
+  .roi-card h2 .swatch { width: 9px; height: 9px; }
+  canvas.wave { width: 100%; height: 110px; display: block; border-radius: 10px; background: #0d1414; }
+
+  .roi-readout { display: flex; gap: 12px; margin-top: 10px; }
+  .ro-stat { flex: 1; text-align: center; }
+  .ro-stat .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-soft); font-weight: 700; }
+  .ro-stat .value { font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 2px; }
+  .ro-stat .unit { font-size: 11px; color: var(--text-soft); }
+
+  .quality-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; background: var(--text-soft); vertical-align: middle; }
+  .quality-good { background: #2E9E6B; }
+  .quality-mid { background: var(--amber); }
+  .quality-bad { background: var(--red); }
+
+  .note {
+    font-size: 12px; color: var(--text-soft); text-align: center; margin-top: 14px; line-height: 1.6;
+  }
+  code { color: var(--teal-dark); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow">Companion App &middot; Kamera Sebagai Stetoskop</div>
+    <h1>ROI Explorer</h1>
+    <p>Bandingkan kualitas sinyal rPPG dari beberapa titik wajah sekaligus, langsung dari browser.</p>
+  </header>
+
+  <div class="card">
+    <h2>Kamera &amp; Penempatan ROI</h2>
+    <div class="cam-box">
+      <video id="video" playsinline autoplay muted></video>
+      <canvas id="overlay"></canvas>
+      <div id="camOverlay" class="cam-overlay">
+        <div>Tekan <strong>Mulai</strong>, lalu geser 3 kotak berwarna ke dahi &amp; pipi Anda. Duduk diam, cahaya wajah rata.</div>
+      </div>
+    </div>
+    <div class="legend">
+      <div class="item"><span class="swatch" style="background:var(--roi1)"></span>ROI 1 — dahi</div>
+      <div class="item"><span class="swatch" style="background:var(--roi2)"></span>ROI 2 — pipi kiri</div>
+      <div class="item"><span class="swatch" style="background:var(--roi3)"></span>ROI 3 — pipi kanan / kontrol</div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Pengaturan</h2>
+    <div class="slider-row">
+      <div class="valline"><span>Panjang jendela analisis</span><b id="winVal">12 s</b></div>
+      <input type="range" id="winLen" min="6" max="20" step="1" value="12">
+    </div>
+    <div class="slider-row">
+      <div class="valline"><span>Ukuran kotak ROI</span><b id="sizeVal">70 px</b></div>
+      <input type="range" id="roiSize" min="40" max="120" step="5" value="70">
+    </div>
+    <div class="controls" style="margin-top:14px;">
+      <button id="startBtn">Mulai</button>
+      <button id="recBtn" title="Rekam CSV">⏺</button>
+    </div>
+    <p class="caption" id="statusNote">Status: menunggu kamera.</p>
+  </div>
+
+  <div class="card roi-card" style="--accent: var(--roi1)">
+    <h2><span class="swatch" style="background:var(--roi1)"></span>ROI 1 &middot; Dahi <span class="badge">live</span></h2>
+    <canvas class="wave" id="wave1"></canvas>
+    <div class="roi-readout">
+      <div class="ro-stat"><div class="label">Estimasi Detak</div><div class="value" id="hr1" style="color:var(--roi1)">--</div><div class="unit">bpm</div></div>
+      <div class="ro-stat"><div class="label">Kualitas Sinyal</div><div class="value" style="font-size:15px; margin-top:8px;"><span class="quality-dot" id="qDot1"></span><span id="qLabel1">Menunggu</span></div><div class="unit" id="snr1">-- dB SNR</div></div>
+    </div>
+  </div>
+
+  <div class="card roi-card" style="--accent: var(--roi2)">
+    <h2><span class="swatch" style="background:var(--roi2)"></span>ROI 2 &middot; Pipi Kiri <span class="badge" style="background:rgba(232,147,92,0.14); color:#B85F26;">live</span></h2>
+    <canvas class="wave" id="wave2"></canvas>
+    <div class="roi-readout">
+      <div class="ro-stat"><div class="label">Estimasi Detak</div><div class="value" id="hr2" style="color:var(--roi2)">--</div><div class="unit">bpm</div></div>
+      <div class="ro-stat"><div class="label">Kualitas Sinyal</div><div class="value" style="font-size:15px; margin-top:8px;"><span class="quality-dot" id="qDot2"></span><span id="qLabel2">Menunggu</span></div><div class="unit" id="snr2">-- dB SNR</div></div>
+    </div>
+  </div>
+
+  <div class="card roi-card" style="--accent: var(--roi3)">
+    <h2><span class="swatch" style="background:var(--roi3)"></span>ROI 3 &middot; Pipi Kanan <span class="badge" style="background:rgba(62,111,166,0.12); color:var(--blue);">live</span></h2>
+    <canvas class="wave" id="wave3"></canvas>
+    <div class="roi-readout">
+      <div class="ro-stat"><div class="label">Estimasi Detak</div><div class="value" id="hr3" style="color:var(--roi3)">--</div><div class="unit">bpm</div></div>
+      <div class="ro-stat"><div class="label">Kualitas Sinyal</div><div class="value" style="font-size:15px; margin-top:8px;"><span class="quality-dot" id="qDot3"></span><span id="qLabel3">Menunggu</span></div><div class="unit" id="snr3">-- dB SNR</div></div>
+    </div>
+  </div>
+
+  <p class="note">
+    Sinyal diekstraksi dengan algoritma <code>POS</code> (Plane-Orthogonal-to-Skin), di-band-pass 0.7&ndash;4&nbsp;Hz via FFT.
+    SNR = rasio energi di sekitar puncak detak (fundamental + harmonik ke-2) terhadap sisa energi pita &mdash; makin tinggi, makin bersih sinyalnya.
+    Tombol ⏺ menyimpan RGB mentah tiap ROI ke CSV untuk dianalisis ulang di Python.
+  </p>
+
+</div>
+
+<script>
+(function(){
+  const video = document.getElementById('video');
+  const overlay = document.getElementById('overlay');
+  const octx = overlay.getContext('2d');
+  const camOverlay = document.getElementById('camOverlay');
+  const startBtn = document.getElementById('startBtn');
+  const recBtn = document.getElementById('recBtn');
+  const statusNote = document.getElementById('statusNote');
+  const winLenSlider = document.getElementById('winLen');
+  const roiSizeSlider = document.getElementById('roiSize');
+
+  const hidden = document.createElement('canvas');
+  const hctx = hidden.getContext('2d', {willReadFrequently:true});
+
+  const ROI_COLORS = {roi1:'#0E7C7B', roi2:'#E8935C', roi3:'#3E6FA6'};
+
+  let rois = [
+    {id:'roi1', color:ROI_COLORS.roi1, x:0.5,  y:0.28, wf:1},
+    {id:'roi2', color:ROI_COLORS.roi2, x:0.32, y:0.52, wf:1},
+    {id:'roi3', color:ROI_COLORS.roi3, x:0.68, y:0.52, wf:1},
+  ];
+
+  let dragging = null, dragOffset = {x:0,y:0};
+  let running = false, recording = false;
+  let stream = null;
+  let winLenSec = 12;
+  let roiSizePx = 70;
+
+  const buffers = {}; const recorded = {};
+  rois.forEach(r => { buffers[r.id] = {t:[],r:[],g:[],b:[]}; recorded[r.id] = []; });
+
+  const waveCanvases = { roi1: document.getElementById('wave1'), roi2: document.getElementById('wave2'), roi3: document.getElementById('wave3') };
+  const waveCtxs = {};
+  Object.keys(waveCanvases).forEach(k => waveCtxs[k] = waveCanvases[k].getContext('2d'));
+
+  function resizeWaveCanvases(){
+    Object.keys(waveCanvases).forEach(k => {
+      const c = waveCanvases[k];
+      const rect = c.getBoundingClientRect();
+      const dpr = window.devicePixelRatio || 1;
+      c.width = rect.width * dpr;
+      c.height = rect.height * dpr;
+      waveCtxs[k].setTransform(dpr,0,0,dpr,0,0);
+    });
+  }
+  window.addEventListener('resize', () => { resizeWaveCanvases(); if(running) resizeOverlay(); });
+
+  // ---------- Sliders ----------
+  winLenSlider.addEventListener('input', e => {
+    winLenSec = parseInt(e.target.value,10);
+    document.getElementById('winVal').textContent = winLenSec + ' s';
+  });
+  roiSizeSlider.addEventListener('input', e => {
+    roiSizePx = parseInt(e.target.value,10);
+    document.getElementById('sizeVal').textContent = roiSizePx + ' px';
+  });
+
+  // ---------- Camera ----------
+  startBtn.addEventListener('click', async () => {
+    if (running) {
+      running = false;
+      startBtn.textContent = 'Mulai';
+      startBtn.classList.remove('stop');
+      camOverlay.classList.remove('hidden');
+      statusNote.textContent = 'Status: berhenti.';
+      recBtn.disabled = true;
+      return;
+    }
+    if (!stream) {
+      startBtn.disabled = true;
+      startBtn.textContent = 'Menghubungkan...';
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false});
+        video.srcObject = stream;
+        await video.play();
+      } catch(err){
+        statusNote.textContent = 'Tidak bisa mengakses kamera: ' + err.message;
+        startBtn.disabled = false;
+        startBtn.textContent = 'Mulai';
+        return;
+      }
+      startBtn.disabled = false;
+    }
+    resizeOverlay();
+    resizeWaveCanvases();
+    running = true;
+    camOverlay.classList.add('hidden');
+    startBtn.textContent = 'Hentikan';
+    startBtn.classList.add('stop');
+    recBtn.disabled = false;
+    statusNote.textContent = 'Status: berjalan. Geser kotak ROI bila perlu.';
+    requestAnimationFrame(loop);
+  });
+
+  function resizeOverlay(){
+    const rect = video.getBoundingClientRect();
+    overlay.width = rect.width; overlay.height = rect.height;
+    hidden.width = video.videoWidth || 640;
+    hidden.height = video.videoHeight || 480;
+  }
+
+  // ---------- ROI dragging ----------
+  function roiPixelRect(r){
+    const cx = r.x * overlay.width, cy = r.y * overlay.height;
+    const w = roiSizePx, h = roiSizePx;
+    return {left:cx-w/2, top:cy-h/2, w, h, cx, cy};
+  }
+  function pointerPos(e){
+    const rect = overlay.getBoundingClientRect();
+    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
+    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
+    return {x:cx, y:cy};
+  }
+  function startDrag(e){
+    if (!running) return;
+    const p = pointerPos(e);
+    for (let i = rois.length-1; i>=0; i--){
+      const rr = roiPixelRect(rois[i]);
+      if (p.x>=rr.left && p.x<=rr.left+rr.w && p.y>=rr.top && p.y<=rr.top+rr.h){
+        dragging = rois[i];
+        dragOffset = {x: p.x - rr.cx, y: p.y - rr.cy};
+        break;
+      }
+    }
+  }
+  function moveDrag(e){
+    if (!dragging) return;
+    e.preventDefault();
+    const p = pointerPos(e);
+    dragging.x = Math.min(1, Math.max(0, (p.x - dragOffset.x) / overlay.width));
+    dragging.y = Math.min(1, Math.max(0, (p.y - dragOffset.y) / overlay.height));
+  }
+  function endDrag(){ dragging = null; }
+  overlay.addEventListener('mousedown', startDrag);
+  overlay.addEventListener('mousemove', moveDrag);
+  window.addEventListener('mouseup', endDrag);
+  overlay.addEventListener('touchstart', startDrag, {passive:true});
+  overlay.addEventListener('touchmove', moveDrag, {passive:false});
+  window.addEventListener('touchend', endDrag);
+
+  function drawOverlay(){
+    octx.clearRect(0,0,overlay.width, overlay.height);
+    rois.forEach(r => {
+      const rr = roiPixelRect(r);
+      octx.strokeStyle = r.color;
+      octx.lineWidth = 2;
+      octx.strokeRect(rr.left, rr.top, rr.w, rr.h);
+    });
+  }
+
+  // ---------- Sampling ----------
+  let lastSampleT = 0;
+  const SAMPLE_INTERVAL = 1000/30;
+
+  function sampleFrame(ts){
+    hctx.save();
+    hctx.scale(-1,1);
+    hctx.drawImage(video, -hidden.width, 0, hidden.width, hidden.height);
+    hctx.restore();
+
+    const sx = hidden.width / overlay.width;
+    const sy = hidden.height / overlay.height;
+
+    rois.forEach(r => {
+      const rr = roiPixelRect(r);
+      const px = Math.max(0, Math.round(rr.left*sx));
+      const py = Math.max(0, Math.round(rr.top*sy));
+      const pw = Math.max(2, Math.round(rr.w*sx));
+      const ph = Math.max(2, Math.round(rr.h*sy));
+      let data;
+      try { data = hctx.getImageData(px, py, pw, ph).data; } catch(e){ return; }
+      let sr=0, sg=0, sb=0, n=0;
+      for (let i=0; i<data.length; i+=4){ sr+=data[i]; sg+=data[i+1]; sb+=data[i+2]; n++; }
+      if (n===0) return;
+      const buf = buffers[r.id];
+      buf.t.push(ts); buf.r.push(sr/n); buf.g.push(sg/n); buf.b.push(sb/n);
+      const maxLen = Math.ceil(winLenSec * 30) + 30;
+      while (buf.t.length > maxLen){ buf.t.shift(); buf.r.shift(); buf.g.shift(); buf.b.shift(); }
+      if (recording) recorded[r.id].push([ts.toFixed(1), (sr/n).toFixed(2), (sg/n).toFixed(2), (sb/n).toFixed(2)]);
+    });
+  }
+
+  function loop(ts){
+    if (!running) return;
+    drawOverlay();
+    if (ts - lastSampleT >= SAMPLE_INTERVAL){ lastSampleT = ts; sampleFrame(ts); }
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Recording / CSV ----------
+  recBtn.addEventListener('click', () => {
+    recording = !recording;
+    recBtn.classList.toggle('on', recording);
+    recBtn.textContent = recording ? '■' : '⏺';
+    if (!recording){ exportCSV(); rois.forEach(r => recorded[r.id] = []); }
+    else rois.forEach(r => recorded[r.id] = []);
+  });
+
+  function exportCSV(){
+    let lines = ['roi,t_ms,r,g,b'];
+    rois.forEach(r => recorded[r.id].forEach(row => lines.push([r.id, ...row].join(','))));
+    const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'rppg_roi_signals_' + Date.now() + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  // ---------- FFT ----------
+  function fft(re, im){
+    const n = re.length;
+    for (let i=1, j=0; i<n; i++){
+      let bit = n >> 1;
+      for (; j & bit; bit >>= 1) j ^= bit;
+      j ^= bit;
+      if (i < j){ [re[i],re[j]] = [re[j],re[i]]; [im[i],im[j]] = [im[j],im[i]]; }
+    }
+    for (let len=2; len<=n; len<<=1){
+      const ang = -2*Math.PI/len;
+      const wr = Math.cos(ang), wi = Math.sin(ang);
+      for (let i=0; i<n; i+=len){
+        let curWr=1, curWi=0;
+        for (let j=0; j<len/2; j++){
+          const ur=re[i+j], ui=im[i+j];
+          const vr=re[i+j+len/2]*curWr - im[i+j+len/2]*curWi;
+          const vi=re[i+j+len/2]*curWi + im[i+j+len/2]*curWr;
+          re[i+j]=ur+vr; im[i+j]=ui+vi;
+          re[i+j+len/2]=ur-vr; im[i+j+len/2]=ui-vi;
+          const nwr = curWr*wr - curWi*wi, nwi = curWr*wi + curWi*wr;
+          curWr = nwr; curWi = nwi;
+        }
+      }
+    }
+  }
+  function nextPow2(n){ let p=1; while(p<n) p<<=1; return p; }
+  function mean(a){ return a.reduce((s,v)=>s+v,0)/a.length; }
+  function std(a){ const m=mean(a); return Math.sqrt(mean(a.map(v=>(v-m)*(v-m)))); }
+
+  function posSignal(r,g,b){
+    const mr=mean(r), mg=mean(g), mb=mean(b);
+    if (mr===0||mg===0||mb===0) return null;
+    const Rn=r.map(v=>v/mr), Gn=g.map(v=>v/mg), Bn=b.map(v=>v/mb);
+    const S1 = Gn.map((v,i)=> v - Bn[i]);
+    const S2 = Rn.map((v,i)=> -2*v + Gn[i] + Bn[i]);
+    const s1std = std(S1), s2std = std(S2);
+    const alpha = s2std===0 ? 0 : s1std/s2std;
+    return S1.map((v,i)=> v + alpha*S2[i]);
+  }
+
+  function analyze(buf){
+    const n0 = buf.t.length;
+    if (n0 < 20) return null;
+    const durMs = buf.t[n0-1] - buf.t[0];
+    if (durMs < 3000) return null;
+    const fs = (n0-1) / (durMs/1000);
+
+    const h = posSignal(buf.r, buf.g, buf.b);
+    if (!h) return null;
+
+    const N = nextPow2(h.length);
+    const re = new Float64Array(N), im = new Float64Array(N);
+    const m = mean(h);
+    for (let i=0; i<h.length; i++){
+      const w = 0.54 - 0.46*Math.cos(2*Math.PI*i/(h.length-1));
+      re[i] = (h[i]-m) * w;
+    }
+    fft(re, im);
+
+    const lowHz = 0.7, highHz = 4.0;
+    const bin2hz = (k) => k*fs/N;
+    let lowBin = Math.max(1, Math.floor(lowHz*N/fs));
+    let highBin = Math.min(Math.floor(N/2)-1, Math.ceil(highHz*N/fs));
+    if (highBin <= lowBin) return null;
+
+    let peakBin = lowBin, peakMag = -1;
+    const mags = [];
+    for (let k=lowBin; k<=highBin; k++){
+      const mag = re[k]*re[k] + im[k]*im[k];
+      mags.push({k, mag});
+      if (mag > peakMag){ peakMag = mag; peakBin = k; }
+    }
+    const hrHz = bin2hz(peakBin);
+    const hrBpm = hrHz*60;
+
+    const tolHz = 0.12;
+    let sigEnergy = 0, totalEnergy = 0;
+    mags.forEach(({k,mag}) => {
+      totalEnergy += mag;
+      const f = bin2hz(k);
+      const nearFund = Math.abs(f-hrHz) <= tolHz;
+      const nearHarm = Math.abs(f-2*hrHz) <= tolHz*1.5;
+      if (nearFund || nearHarm) sigEnergy += mag;
+    });
+    const noiseEnergy = Math.max(totalEnergy - sigEnergy, 1e-9);
+    const snrDb = 10*Math.log10(sigEnergy/noiseEnergy);
+
+    const fre = new Float64Array(N), fim = new Float64Array(N);
+    for (let k=0;k<N;k++){
+      const kk = k<=N/2? k : N-k;
+      if (kk>=lowBin && kk<=highBin){ fre[k]=re[k]; fim[k]=im[k]; }
+    }
+    for (let i=0;i<N;i++) fim[i] = -fim[i];
+    fft(fre, fim);
+    for (let i=0;i<N;i++){ fre[i]/=N; }
+    const filtered = Array.from(fre.slice(0, h.length));
+
+    return {hrBpm, snrDb, filtered, fs};
+  }
+
+  function qualityInfo(db){
+    if (db > 3) return {cls:'quality-good', text:'Baik'};
+    if (db > -2) return {cls:'quality-mid', text:'Sedang'};
+    return {cls:'quality-bad', text:'Lemah'};
+  }
+
+  // ---------- Wave drawing (matches reference style) ----------
+  function drawGrid(ctx, w, h){
+    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
+    ctx.lineWidth = 1;
+    for(let x=0; x<w; x+=w/10){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
+    for(let y=0; y<h; y+=h/4){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
+  }
+  function drawWave(id, filtered, color){
+    const canvas = waveCanvases[id];
+    const ctx = waveCtxs[id];
+    const rect = canvas.getBoundingClientRect();
+    const w = rect.width, h = rect.height;
+    ctx.clearRect(0,0,w,h);
+    ctx.fillStyle = '#0d1414';
+    ctx.fillRect(0,0,w,h);
+    drawGrid(ctx, w, h);
+    if (!filtered || filtered.length < 4) return;
+    const dmin = Math.min(...filtered), dmax = Math.max(...filtered);
+    const range = Math.max(dmax-dmin, 1e-6);
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    const N = filtered.length;
+    for (let i=0;i<N;i++){
+      const x = (i/(N-1))*w;
+      const norm = (filtered[i]-dmin)/range;
+      const y = h - (norm*0.8+0.1)*h;
+      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
+    }
+    ctx.stroke();
+  }
+
+  // ---------- Analysis loop ----------
+  let lastAnalysisT = 0;
+  function analysisLoop(){
+    const now = performance.now();
+    if (running && now - lastAnalysisT > 700){
+      lastAnalysisT = now;
+      rois.forEach((r, idx) => {
+        const res = analyze(buffers[r.id]);
+        const i = idx+1;
+        if (res){
+          document.getElementById('hr'+i).textContent = res.hrBpm.toFixed(0);
+          document.getElementById('snr'+i).textContent = res.snrDb.toFixed(1) + ' dB SNR';
+          const q = qualityInfo(res.snrDb);
+          const qDot = document.getElementById('qDot'+i);
+          qDot.className = 'quality-dot ' + q.cls;
+          document.getElementById('qLabel'+i).textContent = q.text;
+          drawWave(r.id, res.filtered, r.color);
+        }
+      });
+    }
+    requestAnimationFrame(analysisLoop);
+  }
+  resizeWaveCanvases();
+  requestAnimationFrame(analysisLoop);
+
+})();
+</script>
+</body>
+</html>
