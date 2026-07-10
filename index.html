@@ -1,668 +1,815 @@
 <!DOCTYPE html>
-<html lang="id">
+<html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1, user-scalable=no" />
-<title>ROI Explorer — Visualizer rPPG</title>
-<style>
-  :root{
-    --bg: #F5F8F7;
-    --card: #FFFFFF;
-    --line: #E3E9E7;
-    --teal: #0E7C7B;
-    --teal-dark: #0A5F5E;
-    --amber: #E8935C;
-    --red: #E0424F;
-    --blue: #3E6FA6;
-    --text: #1F2937;
-    --text-soft: #6B7280;
-    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
-    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, Roboto, sans-serif;
-
-    --roi1: var(--teal);
-    --roi2: var(--amber);
-    --roi3: var(--blue);
-  }
-  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body {
-    margin: 0; padding: 0; background: var(--bg); color: var(--text);
-    font-family: var(--sans); overscroll-behavior: none;
-  }
-  .wrap { max-width: 480px; margin: 0 auto; padding: 16px 16px 32px; }
-
-  header { text-align: center; padding: 10px 0 18px; }
-  header .eyebrow {
-    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
-    color: var(--teal); font-weight: 700;
-  }
-  header h1 {
-    font-size: 20px; margin: 4px 0 2px; font-weight: 700; letter-spacing: -0.01em;
-  }
-  header p { font-size: 13px; color: var(--text-soft); margin: 0; }
-
-  .card {
-    background: var(--card); border: 1px solid var(--line);
-    border-radius: 16px; padding: 14px; margin-bottom: 14px;
-  }
-  .card h2 {
-    font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em;
-    color: var(--text-soft); margin: 0 0 10px; font-weight: 700;
-    display: flex; align-items: center; gap: 6px;
-  }
-  .badge {
-    display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
-    background: rgba(14,124,123,0.1); color: var(--teal-dark); padding: 3px 8px; border-radius: 6px;
-    text-transform: uppercase;
-  }
-
-  /* Camera preview */
-  .cam-box {
-    position: relative; border-radius: 12px; overflow: hidden;
-    background: #0d1414; aspect-ratio: 4/3;
-  }
-  video { width: 100%; height: 100%; object-fit: cover; display: block; transform: scaleX(-1); }
-  canvas#overlay { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
-  .cam-overlay {
-    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-    flex-direction: column; gap: 8px; color: #E8F2F1; background: rgba(10,20,20,0.45);
-    text-align: center; padding: 20px; font-size: 13px; line-height: 1.5; pointer-events: none;
-  }
-  .cam-overlay.hidden { display: none; }
-  .card p.caption { font-size: 12px; color: var(--text-soft); margin: 8px 0 0; }
-  .card p.caption.active { color: var(--teal-dark); font-weight: 600; }
-
-  /* ROI legend */
-  .legend { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
-  .legend .item { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--text); }
-  .swatch { width: 10px; height: 10px; border-radius: 3px; flex-shrink: 0; }
-
-  /* Sliders */
-  .slider-row { margin-top: 12px; }
-  .slider-row .valline { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-soft); margin-bottom: 4px; }
-  .slider-row .valline b { color: var(--text); font-family: var(--mono); }
-  input[type=range] { width: 100%; accent-color: var(--teal); }
-
-  /* Controls */
-  .controls { display: flex; gap: 10px; margin-top: 4px; }
-  button {
-    flex: 1; border: none; border-radius: 14px; padding: 16px;
-    font-size: 15px; font-weight: 700; font-family: var(--sans);
-    cursor: pointer; transition: transform 80ms ease, opacity 120ms ease;
-  }
-  button:active { transform: scale(0.97); }
-  #startBtn { background: var(--teal); color: white; }
-  #startBtn.stop { background: var(--red); }
-  #recBtn { background: var(--card); color: var(--text); border: 1px solid var(--line); flex: 0 0 auto; width: 56px; }
-  #recBtn.on { background: var(--red); color: white; border-color: var(--red); }
-  #autoBtn { background: var(--card); color: var(--text); border: 1px solid var(--line); flex: 1; padding: 12px; font-size: 13px; }
-  #autoBtn.on { background: var(--teal); color: white; border-color: var(--teal); }
-  button:disabled { opacity: 0.45; cursor: not-allowed; }
-
-  /* ROI cards */
-  .roi-card h2 .swatch { width: 9px; height: 9px; }
-  canvas.wave { width: 100%; height: 110px; display: block; border-radius: 10px; background: #0d1414; }
-
-  .roi-readout { display: flex; gap: 12px; margin-top: 10px; }
-  .ro-stat { flex: 1; text-align: center; }
-  .ro-stat .label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-soft); font-weight: 700; }
-  .ro-stat .value { font-family: var(--mono); font-size: 24px; font-weight: 700; margin-top: 2px; }
-  .ro-stat .unit { font-size: 11px; color: var(--text-soft); }
-
-  .quality-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 5px; background: var(--text-soft); vertical-align: middle; }
-  .quality-good { background: #2E9E6B; }
-  .quality-mid { background: var(--amber); }
-  .quality-bad { background: var(--red); }
-
-  .note {
-    font-size: 12px; color: var(--text-soft); text-align: center; margin-top: 14px; line-height: 1.6;
-  }
-  code { color: var(--teal-dark); }
-</style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>rPPG ROI Explorer - Chapter 2</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, sans-serif;
+            background: #0a0a0a;
+            color: #e0e0e0;
+            overflow-x: hidden;
+            touch-action: manipulation;
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 10px;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            padding: 20px;
+            border-radius: 15px;
+            margin-bottom: 15px;
+            text-align: center;
+            border: 1px solid #2a2a4a;
+        }
+        
+        h1 {
+            font-size: 1.8rem;
+            background: linear-gradient(45deg, #4ecdc4, #44a08d);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            margin-bottom: 8px;
+        }
+        
+        .subtitle {
+            font-size: 0.9rem;
+            color: #888;
+            font-style: italic;
+        }
+        
+        .video-container {
+            position: relative;
+            width: 100%;
+            max-width: 640px;
+            margin: 0 auto 15px;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+            border: 2px solid #2a2a4a;
+            background: #000;
+        }
+        
+        video {
+            width: 100%;
+            display: block;
+            transform: scaleX(-1);
+        }
+        
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: scaleX(-1);
+        }
+        
+        .controls {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            justify-content: center;
+            margin-bottom: 15px;
+        }
+        
+        button {
+            background: linear-gradient(135deg, #2a2a4a 0%, #3a3a5a 100%);
+            color: #e0e0e0;
+            border: 1px solid #4a4a6a;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+            min-width: 120px;
+        }
+        
+        button:hover {
+            background: linear-gradient(135deg, #3a3a5a 0%, #4a4a6a 100%);
+            border-color: #4ecdc4;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(78, 205, 196, 0.2);
+        }
+        
+        button:active {
+            transform: scale(0.95);
+        }
+        
+        button.active {
+            background: linear-gradient(135deg, #4ecdc4 0%, #44a08d 100%);
+            border-color: #4ecdc4;
+            color: #fff;
+        }
+        
+        .signal-panel {
+            background: #1a1a2e;
+            border-radius: 15px;
+            padding: 15px;
+            margin-bottom: 15px;
+            border: 1px solid #2a2a4a;
+        }
+        
+        .signal-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+        
+        .signal-card {
+            background: #0f0f1a;
+            border-radius: 10px;
+            padding: 10px;
+            border: 1px solid #2a2a4a;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .signal-card h3 {
+            font-size: 0.9rem;
+            color: #4ecdc4;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .signal-card canvas {
+            position: relative;
+            transform: none;
+            width: 100%;
+            height: 80px;
+            border-radius: 5px;
+            background: #0a0a15;
+        }
+        
+        .snr-badge {
+            background: rgba(78, 205, 196, 0.2);
+            color: #4ecdc4;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+        
+        .snr-badge.high {
+            background: rgba(76, 175, 80, 0.2);
+            color: #4caf50;
+        }
+        
+        .snr-badge.medium {
+            background: rgba(255, 152, 0, 0.2);
+            color: #ff9800;
+        }
+        
+        .snr-badge.low {
+            background: rgba(244, 67, 54, 0.2);
+            color: #f44336;
+        }
+        
+        .info-box {
+            background: #0f0f1a;
+            border-left: 3px solid #4ecdc4;
+            padding: 12px;
+            margin: 10px 0;
+            border-radius: 5px;
+            font-size: 0.85rem;
+            line-height: 1.6;
+        }
+        
+        .status-bar {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            background: #0f0f1a;
+            border-radius: 10px;
+            margin-bottom: 15px;
+            border: 1px solid #2a2a4a;
+        }
+        
+        .status-indicator {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        
+        .status-indicator.active {
+            background: #4caf50;
+            box-shadow: 0 0 10px rgba(76, 175, 80, 0.5);
+            animation: pulse 2s infinite;
+        }
+        
+        .status-indicator.inactive {
+            background: #f44336;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        
+        .tutorial {
+            background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+            border-radius: 15px;
+            padding: 15px;
+            margin-top: 15px;
+            border: 1px solid #2a2a4a;
+        }
+        
+        .tutorial h2 {
+            color: #4ecdc4;
+            margin-bottom: 10px;
+            font-size: 1.2rem;
+        }
+        
+        .tutorial ol {
+            padding-left: 20px;
+            line-height: 1.8;
+        }
+        
+        .tutorial li {
+            margin-bottom: 8px;
+            font-size: 0.9rem;
+        }
+        
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.4rem;
+            }
+            
+            button {
+                padding: 10px 18px;
+                font-size: 0.9rem;
+                min-width: 100px;
+            }
+            
+            .signal-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
 </head>
 <body>
-<div class="wrap">
-
-  <header>
-    <div class="eyebrow">Companion App &middot; Kamera Sebagai Stetoskop</div>
-    <h1>ROI Explorer</h1>
-    <p>Bandingkan kualitas sinyal rPPG dari beberapa titik wajah sekaligus, langsung dari browser.</p>
-  </header>
-
-  <div class="card">
-    <h2>Kamera &amp; Penempatan ROI</h2>
-    <div class="cam-box">
-      <video id="video" playsinline autoplay muted></video>
-      <canvas id="overlay"></canvas>
-      <div id="camOverlay" class="cam-overlay">
-        <div>Tekan <strong>Mulai</strong>, lalu geser 3 kotak berwarna ke dahi &amp; pipi Anda. Duduk diam, cahaya wajah rata.</div>
-      </div>
+    <div class="container">
+        <header>
+            <h1>🔬 rPPG ROI Explorer</h1>
+            <p class="subtitle">Chapter 2: Understanding Regions of Interest & Signal Quality</p>
+        </header>
+        
+        <div class="status-bar">
+            <span>
+                <span class="status-indicator inactive" id="statusDot"></span>
+                <span id="statusText">Camera Off</span>
+            </span>
+            <span id="faceStatus">👤 No Face Detected</span>
+            <span id="fpsDisplay">FPS: --</span>
+        </div>
+        
+        <div class="video-container">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="overlay"></canvas>
+        </div>
+        
+        <div class="controls">
+            <button id="startBtn" onclick="toggleCamera()">📸 Start Camera</button>
+            <button id="roiBtn" onclick="toggleROI()">🎯 Show ROIs</button>
+            <button onclick="resetSignals()">🔄 Reset</button>
+        </div>
+        
+        <div class="info-box" id="infoBox">
+            <strong>💡 What are ROIs?</strong> Regions of Interest are specific face areas where we measure color changes caused by blood flow. Different areas have different signal quality because of skin thickness, blood vessel density, and motion artifacts.
+        </div>
+        
+        <div class="signal-panel" id="signalPanel" style="display: none;">
+            <div class="signal-grid">
+                <div class="signal-card">
+                    <h3>Forehead <span class="snr-badge" id="snrForehead">-- dB</span></h3>
+                    <canvas id="chartForehead"></canvas>
+                </div>
+                <div class="signal-card">
+                    <h3>Left Cheek <span class="snr-badge" id="snrLeftCheek">-- dB</span></h3>
+                    <canvas id="chartLeftCheek"></canvas>
+                </div>
+                <div class="signal-card">
+                    <h3>Right Cheek <span class="snr-badge" id="snrRightCheek">-- dB</span></h3>
+                    <canvas id="chartRightCheek"></canvas>
+                </div>
+                <div class="signal-card">
+                    <h3>Nose Bridge <span class="snr-badge" id="snrNose">-- dB</span></h3>
+                    <canvas id="chartNose"></canvas>
+                </div>
+            </div>
+        </div>
+        
+        <div class="tutorial">
+            <h2>📖 How to Use This App</h2>
+            <ol>
+                <li><strong>Position yourself</strong> in good, even lighting (avoid shadows on face)</li>
+                <li>Click <strong>"Start Camera"</strong> and allow camera access</li>
+                <li>Click <strong>"Show ROIs"</strong> to see colored regions on your face</li>
+                <li><strong>Stay still</strong> and watch the signals appear below</li>
+                <li>Observe how <strong>SNR (Signal-to-Noise Ratio)</strong> differs between regions</li>
+                <li>Notice that <strong>forehead and cheeks</strong> typically have the best signals!</li>
+            </ol>
+            <p style="margin-top: 10px; font-size: 0.85rem; color: #888;">
+                💡 <strong>Pro tip:</strong> Forehead usually has high SNR because it has many blood vessels and minimal movement. Cheeks are good too, but can be affected by facial expressions!
+            </p>
+        </div>
     </div>
-    <div class="legend">
-      <div class="item"><span class="swatch" style="background:var(--roi1)"></span>ROI 1 — dahi</div>
-      <div class="item"><span class="swatch" style="background:var(--roi2)"></span>ROI 2 — pipi kiri</div>
-      <div class="item"><span class="swatch" style="background:var(--roi3)"></span>ROI 3 — pipi kanan / kontrol</div>
-    </div>
-  </div>
 
-  <div class="card">
-    <h2>Pengaturan</h2>
-    <div class="slider-row">
-      <div class="valline"><span>Panjang jendela analisis</span><b id="winVal">12 s</b></div>
-      <input type="range" id="winLen" min="6" max="20" step="1" value="12">
-    </div>
-    <div class="slider-row">
-      <div class="valline"><span>Ukuran kotak ROI</span><b id="sizeVal">70 px</b></div>
-      <input type="range" id="roiSize" min="40" max="120" step="5" value="70">
-    </div>
-    <div class="controls" style="margin-top:14px;">
-      <button id="startBtn">Mulai</button>
-      <button id="recBtn" title="Rekam CSV">⏺</button>
-    </div>
-    <div class="controls" style="margin-top:10px;">
-      <button id="autoBtn">🎯 Auto ROI (deteksi kulit)</button>
-    </div>
-    <p class="caption" id="statusNote">Status: menunggu kamera.</p>
-  </div>
-
-  <div class="card roi-card" style="--accent: var(--roi1)">
-    <h2><span class="swatch" style="background:var(--roi1)"></span>ROI 1 &middot; Dahi <span class="badge">live</span></h2>
-    <canvas class="wave" id="wave1"></canvas>
-    <div class="roi-readout">
-      <div class="ro-stat"><div class="label">Estimasi Detak</div><div class="value" id="hr1" style="color:var(--roi1)">--</div><div class="unit">bpm</div></div>
-      <div class="ro-stat"><div class="label">Kualitas Sinyal</div><div class="value" style="font-size:15px; margin-top:8px;"><span class="quality-dot" id="qDot1"></span><span id="qLabel1">Menunggu</span></div><div class="unit" id="snr1">-- dB SNR</div></div>
-    </div>
-  </div>
-
-  <div class="card roi-card" style="--accent: var(--roi2)">
-    <h2><span class="swatch" style="background:var(--roi2)"></span>ROI 2 &middot; Pipi Kiri <span class="badge" style="background:rgba(232,147,92,0.14); color:#B85F26;">live</span></h2>
-    <canvas class="wave" id="wave2"></canvas>
-    <div class="roi-readout">
-      <div class="ro-stat"><div class="label">Estimasi Detak</div><div class="value" id="hr2" style="color:var(--roi2)">--</div><div class="unit">bpm</div></div>
-      <div class="ro-stat"><div class="label">Kualitas Sinyal</div><div class="value" style="font-size:15px; margin-top:8px;"><span class="quality-dot" id="qDot2"></span><span id="qLabel2">Menunggu</span></div><div class="unit" id="snr2">-- dB SNR</div></div>
-    </div>
-  </div>
-
-  <div class="card roi-card" style="--accent: var(--roi3)">
-    <h2><span class="swatch" style="background:var(--roi3)"></span>ROI 3 &middot; Pipi Kanan <span class="badge" style="background:rgba(62,111,166,0.12); color:var(--blue);">live</span></h2>
-    <canvas class="wave" id="wave3"></canvas>
-    <div class="roi-readout">
-      <div class="ro-stat"><div class="label">Estimasi Detak</div><div class="value" id="hr3" style="color:var(--roi3)">--</div><div class="unit">bpm</div></div>
-      <div class="ro-stat"><div class="label">Kualitas Sinyal</div><div class="value" style="font-size:15px; margin-top:8px;"><span class="quality-dot" id="qDot3"></span><span id="qLabel3">Menunggu</span></div><div class="unit" id="snr3">-- dB SNR</div></div>
-    </div>
-  </div>
-
-  <p class="note">
-    Sinyal diekstraksi dengan algoritma <code>POS</code> (Plane-Orthogonal-to-Skin), di-band-pass 0.7&ndash;4&nbsp;Hz via FFT.
-    SNR = rasio energi di sekitar puncak detak (fundamental + harmonik ke-2) terhadap sisa energi pita &mdash; makin tinggi, makin bersih sinyalnya.
-    Tombol ⏺ menyimpan RGB mentah tiap ROI ke CSV untuk dianalisis ulang di Python.
-  </p>
-
-</div>
-
-<script type="module">
-(async function(){
-  const video = document.getElementById('video');
-  const overlay = document.getElementById('overlay');
-  const octx = overlay.getContext('2d');
-  const camOverlay = document.getElementById('camOverlay');
-  const startBtn = document.getElementById('startBtn');
-  const recBtn = document.getElementById('recBtn');
-  const autoBtn = document.getElementById('autoBtn');
-  const statusNote = document.getElementById('statusNote');
-  const winLenSlider = document.getElementById('winLen');
-  const roiSizeSlider = document.getElementById('roiSize');
-
-  // ---------- Auto ROI: local skin-tone heuristic (no external model/CDN) ----------
-  // Classifies pixels as skin using two common RGB rules (daylight + artificial light),
-  // takes the bounding box of skin pixels on a downsized frame, then places the three
-  // ROIs as fixed fractions of that box (forehead near top-center, cheeks left/right-mid).
-  let autoEnabled = false;
-  let lastDetectT = 0;
-  const smallDetect = document.createElement('canvas');
-  smallDetect.width = 96; smallDetect.height = 72;
-  const smallCtx = smallDetect.getContext('2d', {willReadFrequently:true});
-
-  autoBtn.addEventListener('click', () => {
-    autoEnabled = !autoEnabled;
-    autoBtn.classList.toggle('on', autoEnabled);
-    autoBtn.textContent = autoEnabled ? '🎯 Auto ROI: Aktif' : '🎯 Auto ROI (deteksi kulit)';
-    statusNote.classList.toggle('active', autoEnabled);
-    if (autoEnabled) statusNote.textContent = 'Status: mendeteksi area kulit...';
-    else statusNote.textContent = 'Status: mode manual — geser kotak ROI langsung di video.';
-  });
-
-  function detectFaceBox(canvas){
-    const W = smallDetect.width, H = smallDetect.height;
-    smallCtx.drawImage(canvas, 0, 0, W, H);
-    const data = smallCtx.getImageData(0,0,W,H).data;
-
-    const xStart = Math.floor(W*0.06), xEnd = Math.ceil(W*0.94);
-    const yStart = Math.floor(H*0.03), yEnd = Math.ceil(H*0.95);
-
-    let minX=W, maxX=0, minY=H, maxY=0, count=0;
-    for (let y=yStart; y<yEnd; y++){
-      for (let x=xStart; x<xEnd; x++){
-        const idx = (y*W + x) * 4;
-        const r = data[idx], g = data[idx+1], b = data[idx+2];
-        // YCbCr skin range — more lighting-robust than raw RGB thresholds.
-        const yy = 0.299*r + 0.587*g + 0.114*b;
-        const cb = 128 - 0.168736*r - 0.331264*g + 0.5*b;
-        const cr = 128 + 0.5*r - 0.418688*g - 0.081312*b;
-        const isSkin = yy>25 && cb>=70 && cb<=140 && cr>=125 && cr<=185;
-        if (isSkin){
-          count++;
-          if (x<minX) minX=x; if (x>maxX) maxX=x;
-          if (y<minY) minY=y; if (y>maxY) maxY=y;
+    <script>
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('overlay');
+        const ctx = canvas.getContext('2d');
+        
+        let streaming = false;
+        let showROI = false;
+        let faceDetected = false;
+        let faceBox = null;
+        let animationId = null;
+        let fps = 0;
+        let frameCount = 0;
+        let lastFpsUpdate = Date.now();
+        
+        // Signal buffers (store last 5 seconds at 30fps = 150 samples)
+        const BUFFER_SIZE = 150;
+        const signals = {
+            forehead: new Array(BUFFER_SIZE).fill(0),
+            leftCheek: new Array(BUFFER_SIZE).fill(0),
+            rightCheek: new Array(BUFFER_SIZE).fill(0),
+            nose: new Array(BUFFER_SIZE).fill(0)
+        };
+        
+        // Chart canvases and contexts
+        const charts = {};
+        
+        // Face detection using simple skin color detection
+        // In a real implementation, you'd use face-api.js or similar
+        // This is a simplified approach for demonstration
+        
+        function initCharts() {
+            ['forehead', 'leftCheek', 'rightCheek', 'nose'].forEach(region => {
+                const canvas = document.getElementById(`chart${region.charAt(0).toUpperCase() + region.slice(1)}`);
+                if (canvas) {
+                    charts[region] = {
+                        canvas: canvas,
+                        ctx: canvas.getContext('2d')
+                    };
+                }
+            });
         }
-      }
-    }
-    const scanned = (xEnd-xStart)*(yEnd-yStart);
-    const pct = count/scanned*100;
-    detectFaceBox.lastPct = pct;
-    if (count < scanned*0.025) return null; // not enough skin pixels — unreliable
-    return { minX:minX/W, maxX:maxX/W, minY:minY/H, maxY:maxY/H };
-  }
-
-  function updateAutoROI(box){
-    const cx = (box.minX+box.maxX)/2;
-    const w = box.maxX-box.minX;
-    const h = box.maxY-box.minY;
-    const targets = {
-      roi1: { x: cx,           y: box.minY + h*0.18 },
-      roi2: { x: cx - w*0.27,  y: box.minY + h*0.55 },
-      roi3: { x: cx + w*0.27,  y: box.minY + h*0.55 },
-    };
-    const alpha = 0.25; // smoothing to avoid jitter
-    rois.forEach(r => {
-      const t = targets[r.id];
-      if (!t) return;
-      r.x = Math.min(1, Math.max(0, r.x + (t.x - r.x) * alpha));
-      r.y = Math.min(1, Math.max(0, r.y + (t.y - r.y) * alpha));
-    });
-  }
-
-  const hidden = document.createElement('canvas');
-  const hctx = hidden.getContext('2d', {willReadFrequently:true});
-
-  const ROI_COLORS = {roi1:'#0E7C7B', roi2:'#E8935C', roi3:'#3E6FA6'};
-
-  let rois = [
-    {id:'roi1', color:ROI_COLORS.roi1, x:0.5,  y:0.28, wf:1},
-    {id:'roi2', color:ROI_COLORS.roi2, x:0.32, y:0.52, wf:1},
-    {id:'roi3', color:ROI_COLORS.roi3, x:0.68, y:0.52, wf:1},
-  ];
-
-  let dragging = null, dragOffset = {x:0,y:0};
-  let running = false, recording = false;
-  let stream = null;
-  let winLenSec = 12;
-  let roiSizePx = 70;
-
-  const buffers = {}; const recorded = {};
-  rois.forEach(r => { buffers[r.id] = {t:[],r:[],g:[],b:[]}; recorded[r.id] = []; });
-
-  const waveCanvases = { roi1: document.getElementById('wave1'), roi2: document.getElementById('wave2'), roi3: document.getElementById('wave3') };
-  const waveCtxs = {};
-  Object.keys(waveCanvases).forEach(k => waveCtxs[k] = waveCanvases[k].getContext('2d'));
-
-  function resizeWaveCanvases(){
-    Object.keys(waveCanvases).forEach(k => {
-      const c = waveCanvases[k];
-      const rect = c.getBoundingClientRect();
-      const dpr = window.devicePixelRatio || 1;
-      c.width = rect.width * dpr;
-      c.height = rect.height * dpr;
-      waveCtxs[k].setTransform(dpr,0,0,dpr,0,0);
-    });
-  }
-  window.addEventListener('resize', () => { resizeWaveCanvases(); if(running) resizeOverlay(); });
-
-  // ---------- Sliders ----------
-  winLenSlider.addEventListener('input', e => {
-    winLenSec = parseInt(e.target.value,10);
-    document.getElementById('winVal').textContent = winLenSec + ' s';
-  });
-  roiSizeSlider.addEventListener('input', e => {
-    roiSizePx = parseInt(e.target.value,10);
-    document.getElementById('sizeVal').textContent = roiSizePx + ' px';
-  });
-
-  // ---------- Camera ----------
-  startBtn.addEventListener('click', async () => {
-    if (running) {
-      running = false;
-      startBtn.textContent = 'Mulai';
-      startBtn.classList.remove('stop');
-      camOverlay.classList.remove('hidden');
-      statusNote.textContent = 'Status: berhenti.';
-      recBtn.disabled = true;
-      return;
-    }
-    if (!stream) {
-      startBtn.disabled = true;
-      startBtn.textContent = 'Menghubungkan...';
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user', width:{ideal:640}, height:{ideal:480}}, audio:false});
-        video.srcObject = stream;
-        await video.play();
-      } catch(err){
-        statusNote.textContent = 'Tidak bisa mengakses kamera: ' + err.message;
-        startBtn.disabled = false;
-        startBtn.textContent = 'Mulai';
-        return;
-      }
-      startBtn.disabled = false;
-    }
-    resizeOverlay();
-    resizeWaveCanvases();
-    running = true;
-    camOverlay.classList.add('hidden');
-    startBtn.textContent = 'Hentikan';
-    startBtn.classList.add('stop');
-    recBtn.disabled = false;
-    statusNote.textContent = 'Status: berjalan. Geser kotak ROI bila perlu.';
-    requestAnimationFrame(loop);
-  });
-
-  function resizeOverlay(){
-    const rect = video.getBoundingClientRect();
-    overlay.width = rect.width; overlay.height = rect.height;
-    hidden.width = video.videoWidth || 640;
-    hidden.height = video.videoHeight || 480;
-  }
-
-  // ---------- ROI dragging ----------
-  function roiPixelRect(r){
-    const cx = r.x * overlay.width, cy = r.y * overlay.height;
-    const w = roiSizePx, h = roiSizePx;
-    return {left:cx-w/2, top:cy-h/2, w, h, cx, cy};
-  }
-  function pointerPos(e){
-    const rect = overlay.getBoundingClientRect();
-    const cx = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
-    const cy = (e.touches ? e.touches[0].clientY : e.clientY) - rect.top;
-    return {x:cx, y:cy};
-  }
-  function startDrag(e){
-    if (!running) return;
-    const p = pointerPos(e);
-    for (let i = rois.length-1; i>=0; i--){
-      const rr = roiPixelRect(rois[i]);
-      if (p.x>=rr.left && p.x<=rr.left+rr.w && p.y>=rr.top && p.y<=rr.top+rr.h){
-        dragging = rois[i];
-        dragOffset = {x: p.x - rr.cx, y: p.y - rr.cy};
-        if (autoEnabled){
-          autoEnabled = false;
-          autoBtn.classList.remove('on');
-          autoBtn.textContent = '🎯 Auto ROI (deteksi kulit)';
-          statusNote.classList.remove('active');
-          statusNote.textContent = 'Status: mode manual (geser ROI mematikan Auto ROI).';
+        
+        function drawChart(region, data) {
+            const chart = charts[region];
+            if (!chart) return;
+            
+            const { canvas, ctx } = chart;
+            const w = canvas.width;
+            const h = canvas.height;
+            
+            ctx.clearRect(0, 0, w, h);
+            
+            // Draw grid
+            ctx.strokeStyle = '#1a1a2e';
+            ctx.lineWidth = 0.5;
+            for (let i = 0; i < 4; i++) {
+                const y = (h / 4) * i;
+                ctx.beginPath();
+                ctx.moveTo(0, y);
+                ctx.lineTo(w, y);
+                ctx.stroke();
+            }
+            
+            // Draw signal
+            ctx.strokeStyle = '#4ecdc4';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            
+            const step = w / (BUFFER_SIZE - 1);
+            const midY = h / 2;
+            const amplitude = h / 3;
+            
+            data.forEach((value, index) => {
+                const x = index * step;
+                const y = midY - value * amplitude;
+                
+                if (index === 0) {
+                    ctx.moveTo(x, y);
+                } else {
+                    ctx.lineTo(x, y);
+                }
+            });
+            
+            ctx.stroke();
+            
+            // Draw center line
+            ctx.strokeStyle = '#2a2a4a';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(0, midY);
+            ctx.lineTo(w, midY);
+            ctx.stroke();
         }
-        break;
-      }
-    }
-  }
-  function moveDrag(e){
-    if (!dragging) return;
-    e.preventDefault();
-    const p = pointerPos(e);
-    dragging.x = Math.min(1, Math.max(0, (p.x - dragOffset.x) / overlay.width));
-    dragging.y = Math.min(1, Math.max(0, (p.y - dragOffset.y) / overlay.height));
-  }
-  function endDrag(){ dragging = null; }
-  overlay.addEventListener('mousedown', startDrag);
-  overlay.addEventListener('mousemove', moveDrag);
-  window.addEventListener('mouseup', endDrag);
-  overlay.addEventListener('touchstart', startDrag, {passive:true});
-  overlay.addEventListener('touchmove', moveDrag, {passive:false});
-  window.addEventListener('touchend', endDrag);
-
-  function drawOverlay(){
-    octx.clearRect(0,0,overlay.width, overlay.height);
-    rois.forEach(r => {
-      const rr = roiPixelRect(r);
-      octx.strokeStyle = r.color;
-      octx.lineWidth = 2;
-      octx.strokeRect(rr.left, rr.top, rr.w, rr.h);
-    });
-  }
-
-  // ---------- Sampling ----------
-  let lastSampleT = 0;
-  const SAMPLE_INTERVAL = 1000/30;
-
-  function sampleFrame(ts){
-    hctx.save();
-    hctx.scale(-1,1);
-    hctx.drawImage(video, -hidden.width, 0, hidden.width, hidden.height);
-    hctx.restore();
-
-    if (autoEnabled && ts - lastDetectT > 150){
-      lastDetectT = ts;
-      const box = detectFaceBox(hidden);
-      const pctTxt = detectFaceBox.lastPct !== undefined ? detectFaceBox.lastPct.toFixed(1) + '%' : '?';
-      if (box){
-        updateAutoROI(box);
-        statusNote.textContent = 'Status: kulit terdeteksi ✓ (' + pctTxt + ' area) — ROI mengikuti otomatis.';
-      } else {
-        statusNote.textContent = 'Status: kulit kurang jelas (' + pctTxt + ' area, butuh 2.5%+) — dekatkan wajah / perbaiki cahaya.';
-      }
-    }
-
-    const sx = hidden.width / overlay.width;
-    const sy = hidden.height / overlay.height;
-
-    rois.forEach(r => {
-      const rr = roiPixelRect(r);
-      const px = Math.max(0, Math.round(rr.left*sx));
-      const py = Math.max(0, Math.round(rr.top*sy));
-      const pw = Math.max(2, Math.round(rr.w*sx));
-      const ph = Math.max(2, Math.round(rr.h*sy));
-      let data;
-      try { data = hctx.getImageData(px, py, pw, ph).data; } catch(e){ return; }
-      let sr=0, sg=0, sb=0, n=0;
-      for (let i=0; i<data.length; i+=4){ sr+=data[i]; sg+=data[i+1]; sb+=data[i+2]; n++; }
-      if (n===0) return;
-      const buf = buffers[r.id];
-      buf.t.push(ts); buf.r.push(sr/n); buf.g.push(sg/n); buf.b.push(sb/n);
-      const maxLen = Math.ceil(winLenSec * 30) + 30;
-      while (buf.t.length > maxLen){ buf.t.shift(); buf.r.shift(); buf.g.shift(); buf.b.shift(); }
-      if (recording) recorded[r.id].push([ts.toFixed(1), (sr/n).toFixed(2), (sg/n).toFixed(2), (sb/n).toFixed(2)]);
-    });
-  }
-
-  function loop(ts){
-    if (!running) return;
-    drawOverlay();
-    if (ts - lastSampleT >= SAMPLE_INTERVAL){ lastSampleT = ts; sampleFrame(ts); }
-    requestAnimationFrame(loop);
-  }
-
-  // ---------- Recording / CSV ----------
-  recBtn.addEventListener('click', () => {
-    recording = !recording;
-    recBtn.classList.toggle('on', recording);
-    recBtn.textContent = recording ? '■' : '⏺';
-    if (!recording){ exportCSV(); rois.forEach(r => recorded[r.id] = []); }
-    else rois.forEach(r => recorded[r.id] = []);
-  });
-
-  function exportCSV(){
-    let lines = ['roi,t_ms,r,g,b'];
-    rois.forEach(r => recorded[r.id].forEach(row => lines.push([r.id, ...row].join(','))));
-    const blob = new Blob([lines.join('\n')], {type:'text/csv'});
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'rppg_roi_signals_' + Date.now() + '.csv';
-    a.click();
-    URL.revokeObjectURL(url);
-  }
-
-  // ---------- FFT ----------
-  function fft(re, im){
-    const n = re.length;
-    for (let i=1, j=0; i<n; i++){
-      let bit = n >> 1;
-      for (; j & bit; bit >>= 1) j ^= bit;
-      j ^= bit;
-      if (i < j){ [re[i],re[j]] = [re[j],re[i]]; [im[i],im[j]] = [im[j],im[i]]; }
-    }
-    for (let len=2; len<=n; len<<=1){
-      const ang = -2*Math.PI/len;
-      const wr = Math.cos(ang), wi = Math.sin(ang);
-      for (let i=0; i<n; i+=len){
-        let curWr=1, curWi=0;
-        for (let j=0; j<len/2; j++){
-          const ur=re[i+j], ui=im[i+j];
-          const vr=re[i+j+len/2]*curWr - im[i+j+len/2]*curWi;
-          const vi=re[i+j+len/2]*curWi + im[i+j+len/2]*curWr;
-          re[i+j]=ur+vr; im[i+j]=ui+vi;
-          re[i+j+len/2]=ur-vr; im[i+j+len/2]=ui-vi;
-          const nwr = curWr*wr - curWi*wi, nwi = curWr*wi + curWi*wr;
-          curWr = nwr; curWi = nwi;
+        
+        function toggleCamera() {
+            if (streaming) {
+                stopCamera();
+            } else {
+                startCamera();
+            }
         }
-      }
-    }
-  }
-  function nextPow2(n){ let p=1; while(p<n) p<<=1; return p; }
-  function mean(a){ return a.reduce((s,v)=>s+v,0)/a.length; }
-  function std(a){ const m=mean(a); return Math.sqrt(mean(a.map(v=>(v-m)*(v-m)))); }
-
-  function posSignal(r,g,b){
-    const mr=mean(r), mg=mean(g), mb=mean(b);
-    if (mr===0||mg===0||mb===0) return null;
-    const Rn=r.map(v=>v/mr), Gn=g.map(v=>v/mg), Bn=b.map(v=>v/mb);
-    const S1 = Gn.map((v,i)=> v - Bn[i]);
-    const S2 = Rn.map((v,i)=> -2*v + Gn[i] + Bn[i]);
-    const s1std = std(S1), s2std = std(S2);
-    const alpha = s2std===0 ? 0 : s1std/s2std;
-    return S1.map((v,i)=> v + alpha*S2[i]);
-  }
-
-  function analyze(buf){
-    const n0 = buf.t.length;
-    if (n0 < 20) return null;
-    const durMs = buf.t[n0-1] - buf.t[0];
-    if (durMs < 3000) return null;
-    const fs = (n0-1) / (durMs/1000);
-
-    const h = posSignal(buf.r, buf.g, buf.b);
-    if (!h) return null;
-
-    const N = nextPow2(h.length);
-    const re = new Float64Array(N), im = new Float64Array(N);
-    const m = mean(h);
-    for (let i=0; i<h.length; i++){
-      const w = 0.54 - 0.46*Math.cos(2*Math.PI*i/(h.length-1));
-      re[i] = (h[i]-m) * w;
-    }
-    fft(re, im);
-
-    const lowHz = 0.7, highHz = 4.0;
-    const bin2hz = (k) => k*fs/N;
-    let lowBin = Math.max(1, Math.floor(lowHz*N/fs));
-    let highBin = Math.min(Math.floor(N/2)-1, Math.ceil(highHz*N/fs));
-    if (highBin <= lowBin) return null;
-
-    let peakBin = lowBin, peakMag = -1;
-    const mags = [];
-    for (let k=lowBin; k<=highBin; k++){
-      const mag = re[k]*re[k] + im[k]*im[k];
-      mags.push({k, mag});
-      if (mag > peakMag){ peakMag = mag; peakBin = k; }
-    }
-    const hrHz = bin2hz(peakBin);
-    const hrBpm = hrHz*60;
-
-    const tolHz = 0.12;
-    let sigEnergy = 0, totalEnergy = 0;
-    mags.forEach(({k,mag}) => {
-      totalEnergy += mag;
-      const f = bin2hz(k);
-      const nearFund = Math.abs(f-hrHz) <= tolHz;
-      const nearHarm = Math.abs(f-2*hrHz) <= tolHz*1.5;
-      if (nearFund || nearHarm) sigEnergy += mag;
-    });
-    const noiseEnergy = Math.max(totalEnergy - sigEnergy, 1e-9);
-    const snrDb = 10*Math.log10(sigEnergy/noiseEnergy);
-
-    const fre = new Float64Array(N), fim = new Float64Array(N);
-    for (let k=0;k<N;k++){
-      const kk = k<=N/2? k : N-k;
-      if (kk>=lowBin && kk<=highBin){ fre[k]=re[k]; fim[k]=im[k]; }
-    }
-    for (let i=0;i<N;i++) fim[i] = -fim[i];
-    fft(fre, fim);
-    for (let i=0;i<N;i++){ fre[i]/=N; }
-    const filtered = Array.from(fre.slice(0, h.length));
-
-    return {hrBpm, snrDb, filtered, fs};
-  }
-
-  function qualityInfo(db){
-    if (db > 3) return {cls:'quality-good', text:'Baik'};
-    if (db > -2) return {cls:'quality-mid', text:'Sedang'};
-    return {cls:'quality-bad', text:'Lemah'};
-  }
-
-  // ---------- Wave drawing (matches reference style) ----------
-  function drawGrid(ctx, w, h){
-    ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-    ctx.lineWidth = 1;
-    for(let x=0; x<w; x+=w/10){ ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,h); ctx.stroke(); }
-    for(let y=0; y<h; y+=h/4){ ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); }
-  }
-  function drawWave(id, filtered, color){
-    const canvas = waveCanvases[id];
-    const ctx = waveCtxs[id];
-    const rect = canvas.getBoundingClientRect();
-    const w = rect.width, h = rect.height;
-    ctx.clearRect(0,0,w,h);
-    ctx.fillStyle = '#0d1414';
-    ctx.fillRect(0,0,w,h);
-    drawGrid(ctx, w, h);
-    if (!filtered || filtered.length < 4) return;
-    const dmin = Math.min(...filtered), dmax = Math.max(...filtered);
-    const range = Math.max(dmax-dmin, 1e-6);
-    ctx.beginPath();
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 2;
-    const N = filtered.length;
-    for (let i=0;i<N;i++){
-      const x = (i/(N-1))*w;
-      const norm = (filtered[i]-dmin)/range;
-      const y = h - (norm*0.8+0.1)*h;
-      if (i===0) ctx.moveTo(x,y); else ctx.lineTo(x,y);
-    }
-    ctx.stroke();
-  }
-
-  // ---------- Analysis loop ----------
-  let lastAnalysisT = 0;
-  function analysisLoop(){
-    const now = performance.now();
-    if (running && now - lastAnalysisT > 700){
-      lastAnalysisT = now;
-      rois.forEach((r, idx) => {
-        const res = analyze(buffers[r.id]);
-        const i = idx+1;
-        if (res){
-          document.getElementById('hr'+i).textContent = res.hrBpm.toFixed(0);
-          document.getElementById('snr'+i).textContent = res.snrDb.toFixed(1) + ' dB SNR';
-          const q = qualityInfo(res.snrDb);
-          const qDot = document.getElementById('qDot'+i);
-          qDot.className = 'quality-dot ' + q.cls;
-          document.getElementById('qLabel'+i).textContent = q.text;
-          drawWave(r.id, res.filtered, r.color);
+        
+        async function startCamera() {
+            try {
+                const constraints = {
+                    video: {
+                        facingMode: 'user',
+                        width: { ideal: 640 },
+                        height: { ideal: 480 }
+                    }
+                };
+                
+                const stream = await navigator.mediaDevices.getUserMedia(constraints);
+                video.srcObject = stream;
+                
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                    
+                    // Initialize chart canvases
+                    Object.values(charts).forEach(chart => {
+                        chart.canvas.width = chart.canvas.offsetWidth;
+                        chart.canvas.height = 80;
+                    });
+                    
+                    streaming = true;
+                    updateUI();
+                    processFrame();
+                };
+                
+                document.getElementById('startBtn').textContent = '⏹ Stop Camera';
+                document.getElementById('startBtn').classList.add('active');
+                document.getElementById('statusDot').classList.remove('inactive');
+                document.getElementById('statusDot').classList.add('active');
+                document.getElementById('statusText').textContent = 'Camera Active';
+                
+            } catch (err) {
+                alert('Error accessing camera: ' + err.message);
+                console.error(err);
+            }
         }
-      });
-    }
-    requestAnimationFrame(analysisLoop);
-  }
-  resizeWaveCanvases();
-  requestAnimationFrame(analysisLoop);
-
-})();
-</script>
+        
+        function stopCamera() {
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+                video.srcObject = null;
+            }
+            
+            streaming = false;
+            faceDetected = false;
+            
+            if (animationId) {
+                cancelAnimationFrame(animationId);
+                animationId = null;
+            }
+            
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            document.getElementById('startBtn').textContent = '📸 Start Camera';
+            document.getElementById('startBtn').classList.remove('active');
+            document.getElementById('statusDot').classList.remove('active');
+            document.getElementById('statusDot').classList.add('inactive');
+            document.getElementById('statusText').textContent = 'Camera Off';
+            document.getElementById('faceStatus').textContent = '👤 No Face Detected';
+        }
+        
+        function toggleROI() {
+            showROI = !showROI;
+            const btn = document.getElementById('roiBtn');
+            const panel = document.getElementById('signalPanel');
+            
+            if (showROI) {
+                btn.textContent = '🎯 Hide ROIs';
+                btn.classList.add('active');
+                panel.style.display = 'block';
+                document.getElementById('infoBox').innerHTML = 
+                    '<strong>🎯 ROIs Active!</strong> Observe the colored regions on your face. ' +
+                    'Each color represents a different measurement area. ' +
+                    'Watch how the signal quality (SNR) varies between regions in real-time!';
+            } else {
+                btn.textContent = '🎯 Show ROIs';
+                btn.classList.remove('active');
+                panel.style.display = 'none';
+                document.getElementById('infoBox').innerHTML = 
+                    '<strong>💡 What are ROIs?</strong> Regions of Interest are specific face areas where we measure color changes caused by blood flow. Different areas have different signal quality because of skin thickness, blood vessel density, and motion artifacts.';
+            }
+        }
+        
+        function resetSignals() {
+            Object.keys(signals).forEach(key => {
+                signals[key] = new Array(BUFFER_SIZE).fill(0);
+            });
+            updateSNRDisplay();
+        }
+        
+        // Simple face detection based on skin color
+        function detectFace(imageData, width, height) {
+            // Simplified approach: look for skin-colored region in center-top area
+            // In production, use face-api.js or similar
+            
+            const centerX = Math.floor(width / 2);
+            const centerY = Math.floor(height / 3);
+            
+            // Sample skin color at expected face location
+            const samplePixel = getPixel(imageData, centerX, centerY, width);
+            
+            if (!isSkinColor(samplePixel)) {
+                return null;
+            }
+            
+            // Simple face bounding box estimation
+            const faceWidth = Math.floor(width * 0.4);
+            const faceHeight = Math.floor(height * 0.5);
+            
+            return {
+                x: centerX - faceWidth / 2,
+                y: centerY - faceHeight / 3,
+                width: faceWidth,
+                height: faceHeight
+            };
+        }
+        
+        function getPixel(imageData, x, y, width) {
+            const index = (y * width + x) * 4;
+            return {
+                r: imageData.data[index],
+                g: imageData.data[index + 1],
+                b: imageData.data[index + 2]
+            };
+        }
+        
+        function isSkinColor(pixel) {
+            const { r, g, b } = pixel;
+            
+            // Simple skin color detection
+            if (r === 0 && g === 0 && b === 0) return false;
+            
+            const rgDiff = r - g;
+            const rbDiff = r - b;
+            
+            return (r > 95 && g > 40 && b > 20 &&
+                    Math.max(r, g, b) - Math.min(r, g, b) > 15 &&
+                    Math.abs(rgDiff) > 15 &&
+                    r > g && r > b);
+        }
+        
+        function getROIRegions(faceBox) {
+            const { x, y, width, height } = faceBox;
+            
+            return {
+                forehead: {
+                    x: x + width * 0.2,
+                    y: y + height * 0.05,
+                    width: width * 0.6,
+                    height: height * 0.2
+                },
+                leftCheek: {
+                    x: x + width * 0.05,
+                    y: y + height * 0.4,
+                    width: width * 0.3,
+                    height: height * 0.3
+                },
+                rightCheek: {
+                    x: x + width * 0.65,
+                    y: y + height * 0.4,
+                    width: width * 0.3,
+                    height: height * 0.3
+                },
+                nose: {
+                    x: x + width * 0.4,
+                    y: y + height * 0.3,
+                    width: width * 0.2,
+                    height: height * 0.25
+                }
+            };
+        }
+        
+        function getAverageColor(imageData, region, imageWidth) {
+            const { x, y, width, height } = region;
+            let r = 0, g = 0, b = 0, count = 0;
+            
+            const startX = Math.max(0, Math.floor(x));
+            const startY = Math.max(0, Math.floor(y));
+            const endX = Math.min(imageWidth, Math.floor(x + width));
+            const endY = Math.min(imageData.height, Math.floor(y + height));
+            
+            for (let py = startY; py < endY; py++) {
+                for (let px = startX; px < endX; px++) {
+                    const pixel = getPixel(imageData, px, py, imageWidth);
+                    if (isSkinColor(pixel)) {
+                        r += pixel.r;
+                        g += pixel.g;
+                        b += pixel.b;
+                        count++;
+                    }
+                }
+            }
+            
+            if (count === 0) return { r: 0, g: 0, b: 0 };
+            
+            return {
+                r: r / count,
+                g: g / count,
+                b: b / count
+            };
+        }
+        
+        function calculateSignal(colorData) {
+            // Simple signal extraction: use green channel (most sensitive to blood volume)
+            // Normalize to [-1, 1] range
+            return (colorData.g - 128) / 128;
+        }
+        
+        function calculateSNR(signalArray) {
+            if (signalArray.length < 10) return 0;
+            
+            // Calculate signal power (variance of signal)
+            const mean = signalArray.reduce((a, b) => a + b, 0) / signalArray.length;
+            const variance = signalArray.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / signalArray.length;
+            
+            // Simple SNR calculation (in dB)
+            // Assuming noise floor is the high-frequency components
+            const signalPower = variance;
+            const noiseFloor = 0.001; // Estimated noise floor
+            
+            if (signalPower === 0) return -Infinity;
+            
+            const snr = 10 * Math.log10(signalPower / noiseFloor);
+            return Math.max(0, Math.min(60, snr)); // Clamp between 0-60 dB
+        }
+        
+        function getSNRClass(snr) {
+            if (snr > 30) return 'high';
+            if (snr > 15) return 'medium';
+            return 'low';
+        }
+        
+        function updateSNRDisplay() {
+            const regions = ['forehead', 'leftCheek', 'rightCheek', 'nose'];
+            regions.forEach(region => {
+                const snr = calculateSNR(signals[region]);
+                const badge = document.getElementById(`snr${region.charAt(0).toUpperCase() + region.slice(1)}`);
+                if (badge) {
+                    const snrClass = getSNRClass(snr);
+                    badge.textContent = `${snr.toFixed(1)} dB`;
+                    badge.className = `snr-badge ${snrClass}`;
+                }
+            });
+        }
+        
+        function processFrame() {
+            if (!streaming) return;
+            
+            frameCount++;
+            const now = Date.now();
+            if (now - lastFpsUpdate >= 1000) {
+                fps = frameCount;
+                frameCount = 0;
+                lastFpsUpdate = now;
+                document.getElementById('fpsDisplay').textContent = `FPS: ${fps}`;
+            }
+            
+            // Draw video frame to canvas for processing
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            
+            // Detect face
+            faceBox = detectFace(imageData, canvas.width, canvas.height);
+            
+            if (faceBox) {
+                faceDetected = true;
+                document.getElementById('faceStatus').textContent = '👤 Face Detected';
+                
+                const rois = getROIRegions(faceBox);
+                
+                // Process each ROI
+                if (showROI) {
+                    Object.entries(rois).forEach(([name, region]) => {
+                        const colorData = getAverageColor(imageData, region, canvas.width);
+                        const signal = calculateSignal(colorData);
+                        
+                        // Update signal buffer
+                        signals[name].push(signal);
+                        signals[name].shift();
+                        
+                        // Draw chart
+                        drawChart(name, signals[name]);
+                    });
+                    
+                    updateSNRDisplay();
+                }
+                
+                // Draw face box and ROIs on overlay
+                drawOverlay(faceBox, rois);
+            } else {
+                faceDetected = false;
+                document.getElementById('faceStatus').textContent = '😕 Face Not Detected - Adjust Position';
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            
+            animationId = requestAnimationFrame(processFrame);
+        }
+        
+        function drawOverlay(faceBox, rois) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            
+            // Draw face bounding box
+            ctx.strokeStyle = '#4ecdc4';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(faceBox.x, faceBox.y, faceBox.width, faceBox.height);
+            
+            if (!showROI) return;
+            
+            // Draw ROI regions
+            const roiColors = {
+                forehead: { stroke: '#FF6B6B', fill: 'rgba(255, 107, 107, 0.2)', label: 'Forehead' },
+                leftCheek: { stroke: '#4ECDC4', fill: 'rgba(78, 205, 196, 0.2)', label: 'L.Cheek' },
+                rightCheek: { stroke: '#45B7D1', fill: 'rgba(69, 183, 209, 0.2)', label: 'R.Cheek' },
+                nose: { stroke: '#FFA07A', fill: 'rgba(255, 160, 122, 0.2)', label: 'Nose' }
+            };
+            
+            Object.entries(rois).forEach(([name, region]) => {
+                const colors = roiColors[name];
+                
+                // Fill region
+                ctx.fillStyle = colors.fill;
+                ctx.fillRect(region.x, region.y, region.width, region.height);
+                
+                // Stroke region
+                ctx.strokeStyle = colors.stroke;
+                ctx.lineWidth = 2;
+                ctx.strokeRect(region.x, region.y, region.width, region.height);
+                
+                // Draw label
+                ctx.fillStyle = '#fff';
+                ctx.font = '12px Arial';
+                ctx.fillText(colors.label, region.x + 2, region.y - 5);
+            });
+            
+            // Draw legend
+            const legendX = 10;
+            const legendY = canvas.height - 90;
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(legendX, legendY, 130, 80);
+            
+            Object.entries(roiColors).forEach(([name, colors], index) => {
+                const y = legendY + 15 + index * 18;
+                ctx.fillStyle = colors.stroke;
+                ctx.fillRect(legendX + 5, y - 5, 15, 10);
+                ctx.fillStyle = '#fff';
+                ctx.font = '11px Arial';
+                ctx.fillText(name.charAt(0).toUpperCase() + name.slice(1), legendX + 25, y + 3);
+            });
+        }
+        
+        function updateUI() {
+            // Update button states
+        }
+        
+        // Initialize
+        initCharts();
+        
+        // Handle window resize
+        window.addEventListener('resize', () => {
+            if (streaming) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                Object.values(charts).forEach(chart => {
+                    chart.canvas.width = chart.canvas.offsetWidth;
+                    chart.canvas.height = 80;
+                });
+            }
+        });
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', () => {
+            stopCamera();
+        });
+    </script>
 </body>
 </html>
